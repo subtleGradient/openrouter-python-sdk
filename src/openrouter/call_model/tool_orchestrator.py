@@ -26,6 +26,7 @@ Example:
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -134,7 +135,19 @@ def extract_tool_calls_from_response(
         name = function.get("name")
         arguments = function.get("arguments")
 
-        if not isinstance(name, str) or not isinstance(arguments, dict):
+        if not isinstance(name, str):
+            continue
+
+        # Handle arguments that may be either dict or JSON string
+        if isinstance(arguments, str):
+            # API sends arguments as JSON string, parse it
+            try:
+                arguments = json.loads(arguments)
+            except (json.JSONDecodeError, TypeError):
+                # If parsing fails, skip this tool call
+                continue
+        elif not isinstance(arguments, dict):
+            # If arguments is neither string nor dict, skip
             continue
 
         # Create ParsedToolCall
@@ -404,9 +417,60 @@ async def execute_tool_loop(
         # Add round results to overall results
         tool_execution_results.extend(round_results)
 
-        # TODO: Update conversation_input with tool results
-        # For now, keep original input (will be updated in integration PR)
-        # The API will handle continuation via previousResponseId
+        # Update conversation with tool results for next round
+        if round_results:
+            # Build tool_calls list for assistant message
+            tool_calls_for_message = []
+            for result in round_results:
+                # Find the original tool call to get arguments
+                original_call = next(
+                    (tc for tc in tool_calls if tc.id == result.tool_call_id), None
+                )
+                tool_calls_for_message.append(
+                    {
+                        "id": result.tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": result.tool_name,
+                            "arguments": json.dumps(original_call.arguments)
+                            if original_call
+                            else "{}",
+                        },
+                    }
+                )
+
+            # Add the assistant's message with tool calls
+            assistant_message = {
+                "role": "assistant",
+                "content": current_response.get("content"),
+                "tool_calls": tool_calls_for_message,
+            }
+
+            # Add tool results as tool messages
+            tool_messages = [
+                {
+                    "role": "tool",
+                    "tool_call_id": result.tool_call_id,
+                    "content": json.dumps(result.result)
+                    if result.result is not None
+                    else result.error or "",
+                }
+                for result in round_results
+            ]
+
+            # Update messages in conversation_input
+            messages = conversation_input.get("messages", [])
+            if isinstance(messages, list):
+                # Create a new list to avoid modifying the original
+                updated_messages = list(messages)
+                updated_messages.append(assistant_message)
+                updated_messages.extend(tool_messages)
+
+                # Create updated input with new messages
+                conversation_input = {
+                    **conversation_input,
+                    "messages": updated_messages,
+                }
 
         # Send updated conversation to API for next round
         response_raw = await send_request(conversation_input, api_tools)
