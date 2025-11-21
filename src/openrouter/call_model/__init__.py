@@ -42,6 +42,7 @@ from .exceptions import (
     ToolExecutionError,
     ToolValidationError,
 )
+from .call_model import call_model, convert_tools_to_api_format
 from .response_wrapper import ResponseWrapper
 from .reusable_stream import ReusableStream
 from .tool_system import (
@@ -63,9 +64,10 @@ from .types import (
     ToolType,
 )
 
-# Note: tool_executor and tool_orchestrator will be added in PR 4.1 (Integration)
-
 __all__ = [
+    # Main API
+    "call_model",
+    "convert_tools_to_api_format",
     # Exception classes
     "CallModelError",
     "MaxToolRoundsExceededError",
