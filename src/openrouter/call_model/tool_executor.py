@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -64,7 +64,7 @@ def _get_parameter_model_from_tool(tool: BaseTool[Any, Any]) -> type[BaseModel] 
     """
     # For tools created with @tool decorator
     if hasattr(tool, "_model_class"):
-        return tool._model_class  # type: ignore[attr-defined]
+        return tool._model_class  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
 
     # For Pydantic v2 models with generics, check __pydantic_generic_metadata__
     # This works for classes like: class MyTool(RegularTool[ParamsModel, ResultType])
@@ -325,7 +325,9 @@ async def execute_tool(
         }
 
         tool_error = ToolExecutionError(
-            tool_name=tool_call.name, error=e, context=error_context
+            tool_name=tool_call.name,
+            error=e,
+            context=cast(dict[str, object], error_context),
         )
 
         return ToolExecutionResult(
