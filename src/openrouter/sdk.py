@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from openrouter.analytics import Analytics
     from openrouter.api_keys import APIKeys
     from openrouter.beta import Beta
+    from openrouter.call_model import BaseTool, ResponseWrapper
     from openrouter.chat import Chat
     from openrouter.completions import Completions
     from openrouter.credits import Credits
@@ -102,9 +103,9 @@ class OpenRouter(BaseSDK):
             client = httpx.Client(follow_redirects=True)
             client_supplied = False
 
-        assert issubclass(
-            type(client), HttpClient
-        ), "The provided client must implement the HttpClient protocol."
+        assert issubclass(type(client), HttpClient), (
+            "The provided client must implement the HttpClient protocol."
+        )
 
         async_client_supplied = True
         if async_client is None:
@@ -114,9 +115,9 @@ class OpenRouter(BaseSDK):
         if debug_logger is None:
             debug_logger = get_default_logger()
 
-        assert issubclass(
-            type(async_client), AsyncHttpClient
-        ), "The provided async_client must implement the AsyncHttpClient protocol."
+        assert issubclass(type(async_client), AsyncHttpClient), (
+            "The provided async_client must implement the AsyncHttpClient protocol."
+        )
 
         security: Any = None
         if callable(api_key):
@@ -161,6 +162,153 @@ class OpenRouter(BaseSDK):
             self.sdk_configuration.client_supplied,
             self.sdk_configuration.async_client,
             self.sdk_configuration.async_client_supplied,
+        )
+
+    async def call_model(
+        self,
+        request: Dict[str, Any],
+        *,
+        tools: Optional[list["BaseTool[Any, Any]"]] = None,
+        max_tool_rounds: Optional[Union[int, Callable[[Any], bool]]] = None,
+        options: Optional[Any] = None,
+    ) -> "ResponseWrapper":
+        """Create a response with multiple consumption patterns.
+
+        This is the high-level API for calling OpenRouter models with automatic
+        tool orchestration and flexible response consumption patterns.
+
+        The method:
+        - Makes exactly one API call to the OpenResponses endpoint
+        - Supports automatic tool execution with validation
+        - Returns a ResponseWrapper for multiple consumption methods
+        - Handles streaming and non-streaming responses uniformly
+
+        Args:
+            request: Request parameters (same as beta.responses.send).
+                     Must include "model" and "input" or other required fields.
+                     Example: {"model": "openai/gpt-4", "input": "Hello!"}
+
+            tools: Optional list of BaseTool instances for automatic execution.
+                   Each tool must be a BaseTool subclass (RegularTool, GeneratorTool,
+                   or ManualTool) with a Pydantic parameter model and execute method.
+                   Default: None (no tools)
+
+            max_tool_rounds: Maximum tool execution rounds.
+                            Can be an int (default: 5, max: 10) or a callable that
+                            takes ToolContext and returns bool.
+                            Default: None (uses default of 5)
+
+            options: Optional request options (timeout, headers, etc.).
+                    Same as beta.responses.send options parameter.
+                    Default: None
+
+        Returns:
+            ResponseWrapper: A wrapper providing multiple consumption methods:
+                - await response.get_message() - Complete message with tool results
+                - await response.get_text() - Text content only
+                - async for delta in response.get_text_stream() - Stream text deltas
+                - async for event in response.get_full_stream() - All SSE events
+                - response.message - Cached message (None if not consumed)
+                - response.text - Cached text (None if not consumed)
+                - response.state - Current state (INITIALIZED, STREAMING, etc.)
+
+        Raises:
+            ValueError: If request is missing required fields
+            ToolExecutionError: If tool execution fails
+            ToolValidationError: If tool input validation fails
+            MaxToolRoundsExceededError: If max_tool_rounds is exceeded
+            StreamInterruptedError: If stream is interrupted
+            Exception: Any other error from the API or tool execution
+
+        Example:
+            Simple text extraction:
+
+            >>> from openrouter import OpenRouter
+            >>>
+            >>> async def main():
+            ...     client = OpenRouter(api_key="...")
+            ...     response = await client.call_model(
+            ...         request={"model": "openai/gpt-4", "input": "Hello!"}
+            ...     )
+            ...     text = await response.get_text()
+            ...     print(text)
+
+            With automatic tool execution:
+
+            >>> from openrouter import OpenRouter
+            >>> from openrouter.call_model import RegularTool
+            >>> from pydantic import BaseModel
+            >>>
+            >>> class WeatherParams(BaseModel):
+            ...     location: str
+            ...     unit: str = "celsius"
+            >>>
+            >>> class WeatherTool(RegularTool[WeatherParams, dict]):
+            ...     name: str = "get_weather"
+            ...     description: str = "Get current weather for a location"
+            ...
+            ...     async def execute(self, params: WeatherParams, context):
+            ...         # Your weather API call here
+            ...         return {"temp": 22, "unit": params.unit, "condition": "sunny"}
+            >>>
+            >>> async def main():
+            ...     client = OpenRouter(api_key="...")
+            ...     response = await client.call_model(
+            ...         request={
+            ...             "model": "openai/gpt-4",
+            ...             "input": "What's the weather in San Francisco?"
+            ...         },
+            ...         tools=[WeatherTool()],
+            ...         max_tool_rounds=3
+            ...     )
+            ...     # Tools are automatically executed!
+            ...     message = await response.get_message()
+            ...     print(message)
+
+            Stream text deltas:
+
+            >>> async def main():
+            ...     client = OpenRouter(api_key="...")
+            ...     response = await client.call_model(
+            ...         request={"model": "openai/gpt-4", "input": "Write a story"}
+            ...     )
+            ...     async for delta in response.get_text_stream():
+            ...         print(delta, end="", flush=True)
+
+            Multiple consumption patterns:
+
+            >>> async def main():
+            ...     client = OpenRouter(api_key="...")
+            ...     response = await client.call_model(
+            ...         request={"model": "openai/gpt-4", "input": "Explain Python"}
+            ...     )
+            ...
+            ...     # Get full message
+            ...     message = await response.get_message()
+            ...
+            ...     # Get text only (from cached data - no additional API call)
+            ...     text = await response.get_text()
+            ...
+            ...     # Check cached values
+            ...     print(f"State: {response.state}")
+            ...     print(f"Has message: {response.message is not None}")
+            ...     print(f"Has text: {response.text is not None}")
+
+        Note:
+            - This method does NOT modify any existing SDK functionality
+            - The old beta.responses.send() API continues to work unchanged
+            - All existing response types and models continue to work
+            - This is a new convenience method on top of existing infrastructure
+        """
+        # Import here to avoid circular dependencies
+        from openrouter.call_model import call_model as call_model_func
+
+        return await call_model_func(
+            client=self,
+            request=request,
+            tools=tools,
+            max_tool_rounds=max_tool_rounds,
+            options=options,
         )
 
     def dynamic_import(self, modname, retries=3):
