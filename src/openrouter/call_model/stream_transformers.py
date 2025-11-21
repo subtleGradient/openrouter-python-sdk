@@ -18,8 +18,8 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable
+from typing import cast, override
 
 # Event type constants
 EVENT_TYPE_OUTPUT_TEXT_DELTA = "response.output_text.delta"
@@ -30,7 +30,7 @@ EVENT_TYPE_FUNCTION_CALL_ARGS_DONE = "response.function_call_arguments.done"
 
 
 async def extract_text_deltas(
-    stream: AsyncIterator[dict[str, Any]],
+    stream: AsyncIterator[dict[str, object]],
 ) -> AsyncIterator[str]:
     """Extract text deltas from response stream events.
 
@@ -54,13 +54,13 @@ async def extract_text_deltas(
         event_type = event.get("type")
         if event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
             delta = event.get("delta")
-            if delta:
+            if delta and isinstance(delta, str):
                 yield delta
 
 
 async def extract_tool_events(
-    stream: AsyncIterator[dict[str, Any]],
-) -> AsyncIterator[dict[str, Any]]:
+    stream: AsyncIterator[dict[str, object]],
+) -> AsyncIterator[dict[str, object]]:
     """Extract tool-related events from response stream.
 
     Filters stream events to yield only tool/function call related events,
@@ -83,26 +83,28 @@ async def extract_tool_events(
             continue
 
         event_type = event.get("type")
-        if event_type and (
-            event_type.startswith("response.function_call")
-            or event_type.startswith("response.output_item")
+        if not isinstance(event_type, str):
+            continue
+
+        if event_type.startswith("response.function_call") or event_type.startswith(
+            "response.output_item"
         ):
             # Check if it's actually a function_call item
             if event_type == EVENT_TYPE_OUTPUT_ITEM_ADDED:
-                item = event.get("item", {})
+                item: object = event.get("item", {})
                 if isinstance(item, dict) and item.get("type") == "function_call":
                     yield event
             elif event_type == EVENT_TYPE_OUTPUT_ITEM_DONE:
-                item = event.get("item", {})
-                if isinstance(item, dict) and item.get("type") == "function_call":
+                item2: object = event.get("item", {})
+                if isinstance(item2, dict) and item2.get("type") == "function_call":
                     yield event
             elif event_type.startswith("response.function_call"):
                 yield event
 
 
 async def build_message_from_stream(
-    stream: AsyncIterator[dict[str, Any]],
-) -> dict[str, Any]:
+    stream: AsyncIterator[dict[str, object]],
+) -> dict[str, object]:
     """Aggregate stream events into a complete assistant message.
 
     Consumes all events from the stream and builds a complete message object
@@ -129,26 +131,26 @@ async def build_message_from_stream(
         event_type = event.get("type")
 
         if event_type == EVENT_TYPE_OUTPUT_ITEM_ADDED:
-            item = event.get("item", {})
+            item: object = event.get("item", {})
             if isinstance(item, dict) and item.get("type") == "message":
                 has_started = True
 
         elif event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
             if has_started:
                 delta = event.get("delta")
-                if delta:
+                if delta and isinstance(delta, str):
                     content_parts.append(delta)
 
         elif event_type == EVENT_TYPE_OUTPUT_ITEM_DONE:
-            item = event.get("item", {})
-            if isinstance(item, dict) and item.get("type") == "message":
+            item3: object = event.get("item", {})
+            if isinstance(item3, dict) and item3.get("type") == "message":
                 # Extract complete text from the done event
-                content = item.get("content", [])
+                content: object = item3.get("content", [])
                 if isinstance(content, list):
                     for part in content:
                         if isinstance(part, dict) and part.get("type") == "output_text":
-                            text = part.get("text")
-                            if text:
+                            text: object = part.get("text")
+                            if isinstance(text, str):
                                 # Use the complete text from the done event
                                 return {
                                     "role": "assistant",
@@ -173,13 +175,15 @@ class StreamTransformer:
         _source: Source async iterator to transform
     """
 
-    def __init__(self, source: AsyncIterator[dict[str, Any]]):
+    _source: AsyncIterator[dict[str, object]]
+
+    def __init__(self, source: AsyncIterator[dict[str, object]]):
         """Initialize transformer with source stream.
 
         Args:
             source: Source async iterator to transform
         """
-        self._source: AsyncIterator[dict[str, Any]] = source
+        self._source = source
 
     async def __aenter__(self) -> "StreamTransformer":
         """Enter async context manager.
@@ -193,7 +197,7 @@ class StreamTransformer:
         self,
         exc_type: type | None,
         exc_val: BaseException | None,
-        exc_tb: Any | None,
+        exc_tb: object | None,
     ) -> None:
         """Exit async context manager with cleanup.
 
@@ -202,11 +206,14 @@ class StreamTransformer:
             exc_val: Exception value if an exception was raised
             exc_tb: Exception traceback if an exception was raised
         """
+        # Close source if it has aclose
+        # AsyncIterator protocol doesn't define aclose, but many implementations have it
         if hasattr(self._source, "aclose"):
-            source_with_close = self._source  # type: AsyncIterator[dict[str, Any]]
-            await source_with_close.aclose()  # type: ignore[attr-defined]
+            aclose_method = cast(object, getattr(self._source, "aclose"))
+            if callable(aclose_method):
+                _ = await cast(Awaitable[object], aclose_method())
 
-    def __aiter__(self) -> AsyncIterator[Any]:
+    def __aiter__(self) -> AsyncIterator[object]:
         """Return async iterator.
 
         Subclasses should override this to implement transformation logic.
@@ -229,6 +236,7 @@ class TextDeltaTransformer(StreamTransformer):
         ...         print(delta, end="", flush=True)
     """
 
+    @override
     async def __aiter__(self) -> AsyncIterator[str]:
         """Iterate over text deltas from the stream.
 
@@ -251,7 +259,8 @@ class ToolEventTransformer(StreamTransformer):
         ...         print(f"Tool event: {event['type']}")
     """
 
-    async def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+    @override
+    async def __aiter__(self) -> AsyncIterator[dict[str, object]]:
         """Iterate over tool events from the stream.
 
         Yields:
@@ -274,7 +283,7 @@ class MessageAggregator(StreamTransformer):
         ...     print(message["content"])
     """
 
-    async def get_message(self) -> dict[str, Any]:
+    async def get_message(self) -> dict[str, object]:
         """Get the complete message from the stream.
 
         Returns:
@@ -282,7 +291,8 @@ class MessageAggregator(StreamTransformer):
         """
         return await build_message_from_stream(self._source)
 
-    async def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+    @override
+    async def __aiter__(self) -> AsyncIterator[dict[str, object]]:
         """Not typically used for aggregator, but yields the final message.
 
         Yields:
