@@ -60,8 +60,8 @@ class ReusableStream:
 
     MAX_CACHE_SIZE: int = 10000  # Approximately 10MB assuming ~1KB per event
 
-    _source: AsyncIterator[dict[str, object]]
-    _buffer: list[dict[str, object]]
+    _source: AsyncIterator[dict[str, object] | object]
+    _buffer: list[dict[str, object] | object]
     _exhausted: bool
     _error: Exception | None
     _lock: asyncio.Lock
@@ -71,12 +71,13 @@ class ReusableStream:
     _pump_task: asyncio.Task[None] | None
     _next_consumer_id: int
 
-    def __init__(self, source: AsyncIterator[dict[str, object]]):
+    def __init__(self, source: AsyncIterator[dict[str, object] | object]):
         """Initialize reusable stream with a source iterator.
 
         Args:
             source: Source async iterator to wrap. This iterator will be
                    consumed exactly once and its events cached for reuse.
+                   Can yield either dicts or Pydantic objects.
         """
         self._source = source
         self._buffer = []
@@ -136,14 +137,15 @@ class ReusableStream:
                 for event_obj in self._consumer_events.values():
                     _ = event_obj.set()
 
-    async def create_iterator(self) -> AsyncIterator[dict[str, object]]:
+    async def create_iterator(self) -> AsyncIterator[dict[str, object] | object]:
         """Create a new independent iterator for this stream.
 
         Each iterator maintains its own read position and can be consumed
         at its own pace. All iterators receive the same events.
 
         Yields:
-            Dict[str, Any]: Stream events from the source iterator
+            dict[str, object] | object: Stream events from the source iterator
+                                        (either dicts or Pydantic objects)
 
         Raises:
             Exception: Any exception raised by the source iterator is
@@ -257,7 +259,7 @@ class ReusableStream:
         await self.close()
 
     @property
-    def _cache(self) -> list[dict[str, object]]:
+    def _cache(self) -> list[dict[str, object] | object]:
         """Alias for buffer to match test expectations.
 
         Returns:
