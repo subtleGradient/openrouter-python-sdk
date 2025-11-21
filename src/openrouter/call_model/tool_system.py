@@ -50,7 +50,6 @@ from typing import (
     ClassVar,
     Generic,
     TypeVar,
-    Union,
     get_args,
     get_origin,
 )
@@ -143,7 +142,7 @@ class BaseTool(BaseModel, Generic[T, R]):
 
     # Class variable to mark this as allowing arbitrary types
     # This is needed for storing the parameter model type
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
 
     def to_json_schema(self) -> dict[str, Any]:
         """Generate JSON schema for tool parameters.
@@ -162,7 +161,7 @@ class BaseTool(BaseModel, Generic[T, R]):
         # Get the parameter model type from the generic base
         # We need to look at __orig_bases__ to get the actual Generic[T, R] info
         if hasattr(self, "__orig_bases__"):
-            for base in self.__orig_bases__:  # type: ignore[attr-defined]
+            for base in self.__orig_bases__:  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
                 origin = get_origin(base)
                 if origin is not None and issubclass(origin, BaseTool):
                     args = get_args(base)
@@ -200,7 +199,7 @@ class RegularTool(BaseTool[T, R]):
         ...         return params.a + params.b
     """
 
-    def execute(self, params: T, context: ToolContext) -> Union[R, Awaitable[R]]:
+    def execute(self, params: T, context: ToolContext) -> R | Awaitable[R]:
         """Execute the tool with given parameters.
 
         This method must be overridden by subclasses. It can be either
@@ -246,7 +245,7 @@ class GeneratorTool(BaseTool[T, R]):
 
     async def execute(
         self, params: T, context: ToolContext
-    ) -> AsyncIterator[Union[Any, R]]:
+    ) -> AsyncIterator[object | R]:
         """Execute the tool as an async generator.
 
         Yields preliminary events during execution, with the final yield
@@ -332,7 +331,7 @@ def tool(cls: type[T]) -> type[RegularTool[T, dict[str, Any]]]:
     # Use docstring as description
     tool_description = cls.__doc__ or ""
 
-    class ToolImpl(RegularTool[T, dict[str, Any]]):  # type: ignore[type-var]
+    class ToolImpl(RegularTool[T, dict[str, Any]]):  # type: ignore[type-var]  # pyright: ignore[reportGeneralTypeIssues]
         """Generated tool implementation."""
 
         name: str = Field(default=tool_name)
@@ -345,7 +344,7 @@ def tool(cls: type[T]) -> type[RegularTool[T, dict[str, Any]]]:
             self,
             params: Any,  # Use Any since cls is runtime type
             context: ToolContext,
-        ) -> Union[dict[str, Any], Awaitable[dict[str, Any]]]:
+        ) -> dict[str, object] | Awaitable[dict[str, object]]:
             """Execute the tool using the model's execute method.
 
             Args:
