@@ -42,10 +42,10 @@ async def main():
 if __name__ == "__main__":
     # Check for API key
     if not os.getenv("OPENROUTER_API_KEY"):
-        print("❌ Error: OPENROUTER_API_KEY environment variable not set")
+        print("Error: OPENROUTER_API_KEY environment variable not set")
         print("Set it with: export OPENROUTER_API_KEY='your-key-here'")
         exit(1)
 
-    print("🚀 Starting your first call_model() example...\n")
+    print("Starting your first call_model() example...\n")
     asyncio.run(main())
-    print("\n✅ Success! You just made your first AI call!")
+    print("\nSuccess! You just made your first AI call.")

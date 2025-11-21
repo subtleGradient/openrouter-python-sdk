@@ -1,14 +1,14 @@
-# 🚀 Quick Start Guide: call_model()
+# Quick Start Guide: call_model()
 
-Welcome! This guide will get you from zero to hero with OpenRouter's `call_model()` API in just 5 minutes.
+This guide demonstrates OpenRouter's `call_model()` API with progressively complex examples.
 
 ## What You'll Learn
 
-- ✨ Make your first AI call in 3 lines of code
-- 📡 Stream responses in real-time
-- 🛠️ Give AI superpowers with tools
-- 🎭 Use multiple consumption patterns
-- 🎯 Choose the right approach for your needs
+- Make your first AI call with minimal code
+- Stream responses in real-time
+- Integrate tools for extended functionality
+- Use multiple consumption patterns
+- Choose the right approach for your use case
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**That's it!** You just made your first AI call. 🎉
+That's all you need for a basic AI call.
 
 ---
 
@@ -126,7 +126,7 @@ if response.text:
     print(f"Already have: {response.text}")
 ```
 
-**The magic:** One API call, infinite flexibility. Save money, go fast.
+**Key benefit:** One API call supports multiple consumption patterns, reducing API costs and improving performance.
 
 ---
 
@@ -205,7 +205,7 @@ Tools auto-execute if provided
 You get the final result!
 ```
 
-**Key insight:** The ResponseWrapper makes ONE API call but gives you multiple ways to use the response. It's like ordering one pizza but being able to eat it multiple ways - by the slice, whole, cold, hot... you get the idea. 🍕
+**Architecture note:** The ResponseWrapper makes a single API call but provides multiple consumption methods through internal caching and stream management.
 
 ---
 
@@ -242,34 +242,27 @@ def my_function():
 
 ## Next Steps
 
-🎓 **Learn More:**
+**Learn More:**
 - [Full API Reference](https://openrouter.ai/docs/sdks/python/reference)
 - [Tool System Guide](docs/tools.md)
 - [Streaming Deep Dive](docs/streaming.md)
 
-💬 **Get Help:**
+**Get Help:**
 - [Discord Community](https://discord.gg/openrouter)
 - [GitHub Issues](https://github.com/OpenRouterTeam/openrouter-python/issues)
 - [Stack Overflow](https://stackoverflow.com/questions/tagged/openrouter)
 
-🌟 **Share:**
-- Built something cool? Share it in our Discord!
-- Found a bug? Let us know on GitHub
-- Have a question? Ask on Stack Overflow
+---
+
+## Summary
+
+You now have the foundation to build AI-powered features with the OpenRouter SDK.
+
+Key principles:
+- **Simple things are simple** - Basic calls require minimal code
+- **Complex things are possible** - Tools, streaming, and custom logic are fully supported
+- **You're in control** - Choose the consumption pattern that fits your requirements
 
 ---
 
-## You're Ready!
-
-You now know enough to build amazing AI-powered features. Start with a simple example, then gradually add complexity as you need it.
-
-Remember the philosophy:
-- **Simple things are simple** (3 lines for basic call)
-- **Complex things are possible** (tools, streaming, custom logic)
-- **You're in control** (choose your consumption pattern)
-
-Happy building! 🚀
-
----
-
-*Made with ❤️ by the OpenRouter team*
+*OpenRouter Python SDK Documentation*

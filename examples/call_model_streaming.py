@@ -39,13 +39,13 @@ async def main():
     async for text_chunk in response.get_text_stream():
         print(text_chunk, end="", flush=True)
 
-    print("\n\n✨ Story complete!")
+    print("\n\nStory complete.")
 
 
 if __name__ == "__main__":
     if not os.getenv("OPENROUTER_API_KEY"):
-        print("❌ Error: OPENROUTER_API_KEY not set")
+        print("Error: OPENROUTER_API_KEY not set")
         exit(1)
 
-    print("📡 Streaming Example\n" + "=" * 50 + "\n")
+    print("Streaming Example\n" + "=" * 50 + "\n")
     asyncio.run(main())

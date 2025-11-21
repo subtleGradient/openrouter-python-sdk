@@ -33,7 +33,7 @@ async def main():
             "input": "Explain quantum computing in one paragraph",
         },
     )
-    print("✅ Got response! Now let's consume it different ways...\n")
+    print("Got response! Now let's consume it different ways...\n")
 
     # Pattern 1: Just the text (simplest)
     print("=" * 60)
@@ -66,7 +66,7 @@ async def main():
     print("We used get_text(), but could have used:")
     print("  async for chunk in response.get_text_stream():")
     print("      print(chunk, end='', flush=True)")
-    print("\nAll from the SAME single API call! 🎉")
+    print("\nAll from the SAME single API call.")
 
 
 async def streaming_example():
@@ -91,10 +91,10 @@ async def streaming_example():
 
 if __name__ == "__main__":
     if not os.getenv("OPENROUTER_API_KEY"):
-        print("❌ Error: OPENROUTER_API_KEY not set")
+        print("Error: OPENROUTER_API_KEY not set")
         exit(1)
 
-    print("🎭 Multiple Consumption Patterns Example\n")
+    print("Multiple Consumption Patterns Example\n")
     print("This demonstrates the power of ResponseWrapper:")
     print("One API call, multiple ways to consume the result!\n")
 
@@ -106,4 +106,4 @@ if __name__ == "__main__":
     print("=" * 60)
     print("You don't have to choose your consumption pattern upfront!")
     print("Make the call, then decide how to use the response.")
-    print("This saves API calls and gives you maximum flexibility. ✨")
+    print("This saves API calls and gives you maximum flexibility.")

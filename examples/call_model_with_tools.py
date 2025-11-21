@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tools: Give AI Superpowers
+"""Tools: Extend AI with Custom Functions
 
 This example shows how to extend AI with custom functions (tools).
 Perfect for: API integrations, data lookups, real-world actions
@@ -83,7 +83,7 @@ async def main():
         max_tool_rounds=3,  # Allow up to 3 rounds of tool execution
     )
 
-    print("🤖 AI is thinking (may use tools)...\n")
+    print("AI is processing request (may use tools)...\n")
 
     # Get the final answer (tools auto-executed!)
     answer = await response.get_text()
@@ -92,10 +92,10 @@ async def main():
 
 if __name__ == "__main__":
     if not os.getenv("OPENROUTER_API_KEY"):
-        print("❌ Error: OPENROUTER_API_KEY not set")
+        print("Error: OPENROUTER_API_KEY not set")
         exit(1)
 
-    print("🛠️  Tools Example\n" + "=" * 50 + "\n")
+    print("Tools Example\n" + "=" * 50 + "\n")
     print("This shows how AI can use tools to get real-time information.\n")
     asyncio.run(main())
-    print("\n✅ Done! The AI used the weather tool to answer your question.")
+    print("\nComplete. The AI used the weather tool to answer your question.")
