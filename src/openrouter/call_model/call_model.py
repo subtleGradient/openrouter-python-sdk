@@ -69,21 +69,21 @@ def convert_tools_to_api_format(
     """Convert Pydantic-based tools to API format.
 
     Takes a list of BaseTool instances and converts them to the format
-    expected by the OpenResponses API. Each tool's Pydantic schema is
+    expected by the OpenRouter API. Each tool's Pydantic schema is
     extracted using model_json_schema() and formatted as a function tool.
 
     Args:
         tools: List of BaseTool instances with Pydantic parameter models
 
     Returns:
-        list[dict[str, Any]]: Tools in API format (type, function with schema)
+        list[dict[str, Any]]: Tools in API format for OpenRouter
 
     Example:
         >>> tools = [WeatherTool(), CalculatorTool()]
         >>> api_tools = convert_tools_to_api_format(tools)
         >>> assert api_tools[0]["type"] == "function"
-        >>> assert "name" in api_tools[0]["function"]
-        >>> assert "parameters" in api_tools[0]["function"]
+        >>> assert "name" in api_tools[0]
+        >>> assert "parameters" in api_tools[0]
     """
     api_tools: list[dict[str, Any]] = []
 
@@ -92,14 +92,13 @@ def convert_tools_to_api_format(
         # The to_json_schema() method gets the schema from the generic type parameter
         parameters_schema = tool.to_json_schema()
 
-        # Build API tool format matching ToolDefinitionJSON structure
+        # Build API tool format matching OpenRouter's OpenResponsesRequestToolFunction structure
+        # OpenRouter expects flat structure, not nested under "function"
         api_tool = {
             "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": parameters_schema,
-            },
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": parameters_schema,
         }
 
         api_tools.append(api_tool)

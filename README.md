@@ -2,6 +2,29 @@
 
 The [OpenRouter SDK](https://openrouter.ai/docs/sdks/python) is a Python toolkit designed to help you build AI-powered features and solutions. Giving you easy access to over 300 models across providers in an easy and type-safe way.
 
+## Quick Start
+
+```bash
+pip install openrouter
+export OPENROUTER_API_KEY='your-key-here'
+```
+
+Then in Python:
+```python
+from openrouter import OpenRouter
+from openrouter.call_model import call_model
+
+client = OpenRouter(api_key="your-key-here")
+response = await call_model(client, {"model": "openai/gpt-4", "input": "Hello!"})
+text = await response.get_text()
+print(text)
+```
+
+**[Full Quick Start Guide →](QUICKSTART.md)**  
+**[See Examples →](examples/)**
+
+---
+
 To learn more about how to use the OpenRouter SDK, check out our [API Reference](https://openrouter.ai/docs/sdks/python/reference) and [Documentation](https://openrouter.ai/docs/sdks/python).
 
 <!-- No Summary [summary] -->

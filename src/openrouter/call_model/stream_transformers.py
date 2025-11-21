@@ -30,36 +30,44 @@ EVENT_TYPE_FUNCTION_CALL_ARGS_DONE = "response.function_call_arguments.done"
 
 
 async def extract_text_deltas(
-    stream: AsyncIterator[dict[str, object]],
+    stream: AsyncIterator[dict[str, object] | object],
 ) -> AsyncIterator[str]:
-    """Extract text deltas from response stream events.
+    """Extract text deltas from stream events.
 
-    Filters stream events to yield only text content deltas, which can be
-    used to stream text output to users in real-time.
+    Filters stream events to only yield text deltas as they arrive.
+    This is useful for real-time display of generated text.
 
     Args:
-        stream: Source async iterator of stream events
+        stream: Source async iterator of stream events (dicts or Pydantic objects)
 
     Yields:
-        str: Text delta strings from response.output_text.delta events
+        str: Text delta strings
 
     Example:
-        >>> async for delta in extract_text_deltas(stream.create_iterator()):
+        >>> async for delta in extract_text_deltas(stream):
         ...     print(delta, end="", flush=True)
     """
     async for event in stream:
-        if not isinstance(event, dict):
-            continue
-
-        event_type = event.get("type")
-        if event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
-            delta = event.get("delta")
-            if delta and isinstance(delta, str):
-                yield delta
+        # Handle both dict events and Pydantic objects (from API)
+        if hasattr(event, "type"):
+            # It's a Pydantic object from the API
+            event_type = getattr(event, "type", None)
+            if event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
+                if hasattr(event, "delta"):
+                    delta = getattr(event, "delta", None)
+                    if isinstance(delta, str):
+                        yield delta
+        elif isinstance(event, dict):
+            # It's a dict (for testing/mocking)
+            event_type = event.get("type")
+            if event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
+                delta = event.get("delta")
+                if isinstance(delta, str):
+                    yield delta
 
 
 async def extract_tool_events(
-    stream: AsyncIterator[dict[str, object]],
+    stream: AsyncIterator[dict[str, object] | object],
 ) -> AsyncIterator[dict[str, object]]:
     """Extract tool-related events from response stream.
 
@@ -67,7 +75,7 @@ async def extract_tool_events(
     useful for tracking tool execution progress.
 
     Args:
-        stream: Source async iterator of stream events
+        stream: Source async iterator of stream events (dicts or Pydantic objects)
 
     Yields:
         dict[str, Any]: Tool-related events (function_call_arguments.delta,
@@ -79,11 +87,32 @@ async def extract_tool_events(
         ...         print(f"Tool {tool_event['name']} called")
     """
     async for event in stream:
-        if not isinstance(event, dict):
-            continue
+        event_dict: dict[str, object]
 
-        event_type = event.get("type")
-        if not isinstance(event_type, str):
+        # Convert Pydantic objects to dicts for consistent output
+        if hasattr(event, "type"):
+            # It's a Pydantic object from the API
+            event_type = getattr(event, "type", None)
+            if not isinstance(event_type, str):
+                continue
+
+            # Convert to dict for output
+            if hasattr(event, "model_dump"):
+                event_dict = cast(object, event).model_dump()  # type: ignore
+            else:
+                # Fallback: manually construct dict
+                event_dict = {"type": event_type}
+                for attr in dir(event):
+                    if not attr.startswith("_") and attr != "type":
+                        value = getattr(event, attr, None)
+                        if value is not None:
+                            event_dict[attr] = value
+        elif isinstance(event, dict):
+            event_dict = event
+            event_type = event.get("type")
+            if not isinstance(event_type, str):
+                continue
+        else:
             continue
 
         if event_type.startswith("response.function_call") or event_type.startswith(
@@ -91,19 +120,19 @@ async def extract_tool_events(
         ):
             # Check if it's actually a function_call item
             if event_type == EVENT_TYPE_OUTPUT_ITEM_ADDED:
-                item: object = event.get("item", {})
+                item: object = event_dict.get("item", {})
                 if isinstance(item, dict) and item.get("type") == "function_call":
-                    yield event
+                    yield event_dict
             elif event_type == EVENT_TYPE_OUTPUT_ITEM_DONE:
-                item2: object = event.get("item", {})
+                item2: object = event_dict.get("item", {})
                 if isinstance(item2, dict) and item2.get("type") == "function_call":
-                    yield event
+                    yield event_dict
             elif event_type.startswith("response.function_call"):
-                yield event
+                yield event_dict
 
 
 async def build_message_from_stream(
-    stream: AsyncIterator[dict[str, object]],
+    stream: AsyncIterator[dict[str, object] | object],
 ) -> dict[str, object]:
     """Aggregate stream events into a complete assistant message.
 
@@ -112,7 +141,7 @@ async def build_message_from_stream(
     response but are consuming a stream.
 
     Args:
-        stream: Source async iterator of stream events
+        stream: Source async iterator of stream events (dicts or Pydantic objects)
 
     Returns:
         dict[str, Any]: Complete assistant message with role and content
@@ -125,24 +154,49 @@ async def build_message_from_stream(
     has_started = False
 
     async for event in stream:
-        if not isinstance(event, dict):
+        # Convert Pydantic objects to dicts for processing
+        if hasattr(event, "type"):
+            # It's a Pydantic object from the API
+            event_type = getattr(event, "type", None)
+            if not isinstance(event_type, str):
+                continue
+
+            # Convert to dict for processing
+            if hasattr(event, "model_dump"):
+                event_dict: dict[str, object] = cast(object, event).model_dump()  # type: ignore
+            else:
+                # Fallback: manually get attributes we need
+                event_dict = {"type": event_type}
+                if hasattr(event, "item"):
+                    item_value = getattr(event, "item", None)
+                    if item_value is not None:
+                        if hasattr(item_value, "model_dump"):
+                            event_dict["item"] = cast(object, item_value).model_dump()  # type: ignore
+                        else:
+                            event_dict["item"] = item_value
+                if hasattr(event, "delta"):
+                    event_dict["delta"] = getattr(event, "delta", None)
+        elif isinstance(event, dict):
+            event_dict = event
+            event_type = event.get("type")
+            if not isinstance(event_type, str):
+                continue
+        else:
             continue
 
-        event_type = event.get("type")
-
         if event_type == EVENT_TYPE_OUTPUT_ITEM_ADDED:
-            item: object = event.get("item", {})
+            item: object = event_dict.get("item", {})
             if isinstance(item, dict) and item.get("type") == "message":
                 has_started = True
 
         elif event_type == EVENT_TYPE_OUTPUT_TEXT_DELTA:
             if has_started:
-                delta = event.get("delta")
+                delta = event_dict.get("delta")
                 if delta and isinstance(delta, str):
                     content_parts.append(delta)
 
         elif event_type == EVENT_TYPE_OUTPUT_ITEM_DONE:
-            item3: object = event.get("item", {})
+            item3: object = event_dict.get("item", {})
             if isinstance(item3, dict) and item3.get("type") == "message":
                 # Extract complete text from the done event
                 content: object = item3.get("content", [])
@@ -175,13 +229,13 @@ class StreamTransformer:
         _source: Source async iterator to transform
     """
 
-    _source: AsyncIterator[dict[str, object]]
+    _source: AsyncIterator[dict[str, object] | object]
 
-    def __init__(self, source: AsyncIterator[dict[str, object]]):
+    def __init__(self, source: AsyncIterator[dict[str, object] | object]):
         """Initialize transformer with source stream.
 
         Args:
-            source: Source async iterator to transform
+            source: Source async iterator to transform (dicts or Pydantic objects)
         """
         self._source = source
 

@@ -194,8 +194,8 @@ class ResponseWrapper:
 
                 # Make API call via beta.responses.send with stream=True
                 # This makes exactly one API call (FR-1.1.4)
-                # Note: send_async returns an async generator directly
-                api_stream = self._client.beta.responses.send_async(
+                # Note: send_async returns a coroutine that we need to await
+                api_stream = await self._client.beta.responses.send_async(
                     stream=True, **self._request
                 )
 
@@ -425,7 +425,7 @@ class ResponseWrapper:
         async for delta in extract_text_deltas(stream_iterator):
             yield delta
 
-    async def get_full_stream(self) -> AsyncIterator[dict[str, object]]:
+    async def get_full_stream(self) -> AsyncIterator[dict[str, object] | object]:
         """Stream all SSE events from the response.
 
         This method provides access to the raw event stream, yielding all
@@ -433,16 +433,18 @@ class ResponseWrapper:
         Multiple consumers can iterate concurrently.
 
         Yields:
-            dict[str, object]: Raw SSE events from the API
+            dict[str, object] | object: Raw SSE events from the API
+                                        (either dicts or Pydantic objects)
 
         Raises:
             Exception: Any error during stream initialization
 
         Example:
             >>> async for event in wrapper.get_full_stream():
-            ...     print(f"Event type: {event.get('type')}")
-            ...     if event.get('type') == 'response.output_text.delta':
-            ...         print(f"Delta: {event.get('delta')}")
+            ...     if hasattr(event, 'type'):
+            ...         print(f"Event type: {event.type}")
+            ...     elif isinstance(event, dict):
+            ...         print(f"Event type: {event.get('type')}")
         """
         # Initialize stream if needed
         await self._init_stream()
