@@ -34,7 +34,8 @@ Example:
 """
 
 import asyncio
-from typing import Any, AsyncIterator, Dict, List, Optional, Set
+from collections.abc import Awaitable, AsyncIterator
+from typing import cast
 
 
 class ReusableStream:
@@ -58,7 +59,18 @@ class ReusableStream:
 
     MAX_CACHE_SIZE: int = 10000  # Approximately 10MB assuming ~1KB per event
 
-    def __init__(self, source: AsyncIterator[Dict[str, Any]]):
+    _source: AsyncIterator[dict[str, object]]
+    _buffer: list[dict[str, object]]
+    _exhausted: bool
+    _error: Exception | None
+    _lock: asyncio.Lock
+    _consumers: set[int]
+    _consumer_positions: dict[int, int]
+    _consumer_events: dict[int, asyncio.Event]
+    _pump_task: asyncio.Task[None] | None
+    _next_consumer_id: int
+
+    def __init__(self, source: AsyncIterator[dict[str, object]]):
         """Initialize reusable stream with a source iterator.
 
         Args:
@@ -66,14 +78,14 @@ class ReusableStream:
                    consumed exactly once and its events cached for reuse.
         """
         self._source = source
-        self._buffer: List[Dict[str, Any]] = []
+        self._buffer = []
         self._exhausted = False
-        self._error: Optional[Exception] = None
+        self._error = None
         self._lock = asyncio.Lock()
-        self._consumers: Set[int] = set()
-        self._consumer_positions: Dict[int, int] = {}
-        self._consumer_events: Dict[int, asyncio.Event] = {}
-        self._pump_task: Optional[asyncio.Task[None]] = None
+        self._consumers = set()
+        self._consumer_positions = {}
+        self._consumer_events = {}
+        self._pump_task = None
         self._next_consumer_id = 0
 
     async def _pump_source(self) -> None:
@@ -90,21 +102,21 @@ class ReusableStream:
 
                     # Notify all waiting consumers
                     for event_obj in self._consumer_events.values():
-                        event_obj.set()
+                        _ = event_obj.set()
         except Exception as e:
             async with self._lock:
                 self._error = e
                 # Notify consumers of error
                 for event_obj in self._consumer_events.values():
-                    event_obj.set()
+                    _ = event_obj.set()
         finally:
             async with self._lock:
                 self._exhausted = True
                 # Final notification to all consumers
                 for event_obj in self._consumer_events.values():
-                    event_obj.set()
+                    _ = event_obj.set()
 
-    async def create_iterator(self) -> AsyncIterator[Dict[str, Any]]:
+    async def create_iterator(self) -> AsyncIterator[dict[str, object]]:
         """Create a new independent iterator for this stream.
 
         Each iterator maintains its own read position and can be consumed
@@ -155,16 +167,16 @@ class ReusableStream:
                         break
 
                     # Clear event before waiting
-                    self._consumer_events[consumer_id].clear()
+                    _ = self._consumer_events[consumer_id].clear()
 
                 # Wait for new data (outside lock to allow pump to proceed)
-                await self._consumer_events[consumer_id].wait()
+                _ = await self._consumer_events[consumer_id].wait()
         finally:
             # Clean up consumer
             async with self._lock:
-                self._consumers.discard(consumer_id)
-                self._consumer_positions.pop(consumer_id, None)
-                self._consumer_events.pop(consumer_id, None)
+                _ = self._consumers.discard(consumer_id)
+                _ = self._consumer_positions.pop(consumer_id, None)
+                _ = self._consumer_events.pop(consumer_id, None)
 
     async def close(self) -> None:
         """Close the stream and clean up resources.
@@ -183,20 +195,23 @@ class ReusableStream:
         """
         # Cancel pump task
         if self._pump_task and not self._pump_task.done():
-            self._pump_task.cancel()
+            _ = self._pump_task.cancel()
             try:
                 await self._pump_task
             except asyncio.CancelledError:
                 pass
 
         # Close source if it has aclose
+        # AsyncIterator protocol doesn't define aclose, but many implementations have it
         if hasattr(self._source, "aclose"):
-            await self._source.aclose()  # type: ignore
+            aclose_method = cast(object, getattr(self._source, "aclose"))
+            if callable(aclose_method):
+                _ = await cast(Awaitable[object], aclose_method())
 
         # Wake up any waiting consumers
         async with self._lock:
             for event_obj in self._consumer_events.values():
-                event_obj.set()
+                _ = event_obj.set()
 
     async def __aenter__(self) -> "ReusableStream":
         """Enter async context manager.
@@ -208,9 +223,9 @@ class ReusableStream:
 
     async def __aexit__(
         self,
-        exc_type: Optional[type],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
+        exc_type: type | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
     ) -> None:
         """Exit async context manager with cleanup.
 
@@ -222,7 +237,7 @@ class ReusableStream:
         await self.close()
 
     @property
-    def _cache(self) -> List[Dict[str, Any]]:
+    def _cache(self) -> list[dict[str, object]]:
         """Alias for buffer to match test expectations.
 
         Returns:
