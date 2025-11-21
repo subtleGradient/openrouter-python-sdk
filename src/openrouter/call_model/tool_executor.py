@@ -259,44 +259,50 @@ async def execute_tool(
         validated_params = _validate_tool_input(tool, tool_call, tool_call.arguments)
 
         # Execute with timeout (NFR-2.2.4)
-        async with asyncio.timeout(timeout):
-            if isinstance(tool, GeneratorTool):
-                # Handle generator tool with preliminary results (FR-1.3.9)
-                final_result, preliminary_results = await _execute_generator_tool(
+        # Using asyncio.wait_for for Python 3.9+ compatibility
+        if isinstance(tool, GeneratorTool):
+            # Handle generator tool with preliminary results (FR-1.3.9)
+            final_result, preliminary_results = await asyncio.wait_for(
+                _execute_generator_tool(
                     tool=tool,
                     validated_params=validated_params,
                     context=context,
                     on_preliminary_result=on_preliminary_result,
                     tool_call_id=tool_call.id,
-                )
+                ),
+                timeout=timeout,
+            )
 
-                return ToolExecutionResult(
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    result=final_result,
-                    preliminary_results=preliminary_results,
-                )
+            return ToolExecutionResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                result=final_result,
+                preliminary_results=preliminary_results,
+            )
 
-            elif isinstance(tool, RegularTool):
-                # Handle regular tool (sync or async)
-                result = await _execute_regular_tool(
+        elif isinstance(tool, RegularTool):
+            # Handle regular tool (sync or async)
+            result = await asyncio.wait_for(
+                _execute_regular_tool(
                     tool=tool, validated_params=validated_params, context=context
-                )
+                ),
+                timeout=timeout,
+            )
 
-                return ToolExecutionResult(
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    result=result,
-                )
+            return ToolExecutionResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                result=result,
+            )
 
-            else:
-                # Should not reach here
-                return ToolExecutionResult(
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    result=None,
-                    error=f"Unknown tool type: {type(tool).__name__}",
-                )
+        else:
+            # Should not reach here
+            return ToolExecutionResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                result=None,
+                error=f"Unknown tool type: {type(tool).__name__}",
+            )
 
     except asyncio.TimeoutError:
         # Tool execution exceeded timeout (NFR-2.2.4)
