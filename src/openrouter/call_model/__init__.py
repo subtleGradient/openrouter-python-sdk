@@ -42,17 +42,8 @@ from .exceptions import (
     ToolExecutionError,
     ToolValidationError,
 )
+from .response_wrapper import ResponseWrapper
 from .reusable_stream import ReusableStream
-from .tool_executor import execute_tool, find_tool_by_name
-from .tool_orchestrator import (
-    ToolOrchestrationResult,
-    execute_tool_loop,
-    extract_tool_calls_from_response,
-    get_tool_execution_errors,
-    has_tool_execution_errors,
-    response_has_tool_calls,
-    summarize_tool_executions,
-)
 from .tool_system import (
     BaseTool,
     GeneratorTool,
@@ -72,6 +63,8 @@ from .types import (
     ToolType,
 )
 
+# Note: tool_executor and tool_orchestrator will be added in PR 4.1 (Integration)
+
 __all__ = [
     # Exception classes
     "CallModelError",
@@ -80,6 +73,7 @@ __all__ = [
     "ToolExecutionError",
     "ToolValidationError",
     # Core classes
+    "ResponseWrapper",
     "ReusableStream",
     # Tool system
     "BaseTool",
@@ -88,17 +82,7 @@ __all__ = [
     "ParsedToolCall",
     "RegularTool",
     "ToolExecutionResult",
-    "execute_tool",
-    "find_tool_by_name",
     "tool",
-    # Tool orchestration
-    "ToolOrchestrationResult",
-    "execute_tool_loop",
-    "extract_tool_calls_from_response",
-    "get_tool_execution_errors",
-    "has_tool_execution_errors",
-    "response_has_tool_calls",
-    "summarize_tool_executions",
     # Type definitions
     "CachedData",
     "EventType",
