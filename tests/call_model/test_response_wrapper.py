@@ -678,6 +678,345 @@ class TestToolIntegration:
         assert wrapper.state == ResponseState.COMPLETED
 
 
+@pytest.mark.asyncio
+class TestConsumptionMethods:
+    """Test consumption methods implementation (FR-1.2.1-1.2.5)."""
+
+    @pytest.fixture
+    def mock_stream_events(self) -> list[dict[str, object]]:
+        """Create mock stream events for testing.
+
+        Returns:
+            list[dict[str, object]]: Mock events simulating API stream
+        """
+        return [
+            {
+                "type": "response.output_item.added",
+                "item": {"type": "message", "id": "msg_1"},
+            },
+            {
+                "type": "response.output_text.delta",
+                "delta": "Hello",
+            },
+            {
+                "type": "response.output_text.delta",
+                "delta": " world",
+            },
+            {
+                "type": "response.output_text.delta",
+                "delta": "!",
+            },
+            {
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "message",
+                    "id": "msg_1",
+                    "content": [{"type": "output_text", "text": "Hello world!"}],
+                },
+            },
+        ]
+
+    @pytest.fixture
+    def wrapper_with_mock_stream(
+        self,
+        mock_client: Mock,
+        basic_request: dict[str, object],
+        mock_stream_events: list[dict[str, object]],
+    ) -> ResponseWrapper:
+        """Create wrapper with mocked stream.
+
+        Args:
+            mock_client: Mock client
+            basic_request: Basic request
+            mock_stream_events: Mock events
+
+        Returns:
+            ResponseWrapper: Wrapper with mocked stream
+        """
+        wrapper = ResponseWrapper(
+            client=mock_client,
+            request=basic_request,
+        )
+
+        # Mock the stream creation
+        async def create_mock_stream() -> None:
+            """Create mock stream."""
+            from openrouter.call_model.reusable_stream import ReusableStream
+
+            async def mock_source() -> AsyncIterator[dict[str, object]]:
+                """Mock source that yields events."""
+                for event in mock_stream_events:
+                    yield event
+
+            wrapper._stream = ReusableStream(mock_source())
+            wrapper._state = ResponseState.STREAMING
+
+        # Replace _init_stream with mock version
+        async def mock_init_stream() -> None:
+            """Mock init."""
+            if wrapper._init_promise is None:
+                wrapper._init_promise = asyncio.create_task(create_mock_stream())
+            await wrapper._init_promise
+
+        wrapper._init_stream = mock_init_stream  # type: ignore[method-assign]
+
+        return wrapper
+
+    async def test_get_message_returns_complete_message(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test get_message() returns complete message (FR-1.2.1).
+
+        Hypothesis: get_message() aggregates stream into complete message.
+        Evidence: Message contains expected content from stream.
+        """
+        # Get message
+        message = await wrapper_with_mock_stream.get_message()
+
+        # Evidence: Message has expected structure
+        assert isinstance(message, dict)
+        assert message["role"] == "assistant"
+        assert "content" in message
+
+        # Evidence: Content matches expected text
+        content = message["content"]
+        if isinstance(content, str):
+            assert content == "Hello world!"
+        elif isinstance(content, list):
+            # Extract text from content parts
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "output_text":
+                    text_parts.append(part.get("text", ""))
+            assert "".join(text_parts) == "Hello world!"
+
+    async def test_get_text_returns_text_only(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test get_text() returns only text content (FR-1.2.2).
+
+        Hypothesis: get_text() extracts just the text from message.
+        Evidence: Returns string with text content only.
+        """
+        # Get text
+        text = await wrapper_with_mock_stream.get_text()
+
+        # Evidence: Text is a string
+        assert isinstance(text, str)
+
+        # Evidence: Text matches expected content
+        assert text == "Hello world!"
+
+    async def test_get_text_stream_yields_deltas(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test get_text_stream() yields text deltas (FR-1.2.3).
+
+        Hypothesis: get_text_stream() yields text as it arrives.
+        Evidence: Stream yields expected deltas in order.
+        """
+        # Collect deltas from stream
+        deltas: list[str] = []
+        async for delta in wrapper_with_mock_stream.get_text_stream():
+            deltas.append(delta)
+
+        # Evidence: Got expected deltas
+        assert deltas == ["Hello", " world", "!"]
+
+        # Evidence: Joined deltas match complete text
+        assert "".join(deltas) == "Hello world!"
+
+    async def test_get_full_stream_yields_all_events(
+        self,
+        wrapper_with_mock_stream: ResponseWrapper,
+        mock_stream_events: list[dict[str, object]],
+    ):
+        """Test get_full_stream() yields all events (FR-1.2.4).
+
+        Hypothesis: get_full_stream() provides raw event access.
+        Evidence: All events yielded in order.
+        """
+        # Collect events from stream
+        events: list[dict[str, object]] = []
+        async for event in wrapper_with_mock_stream.get_full_stream():
+            events.append(event)
+
+        # Evidence: Got all expected events
+        assert len(events) == len(mock_stream_events)
+
+        # Evidence: Events match expected types
+        event_types = [e.get("type") for e in events]
+        expected_types = [e.get("type") for e in mock_stream_events]
+        assert event_types == expected_types
+
+    async def test_multiple_consumption_methods_return_consistent_data(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test multiple consumption patterns are consistent (FR-1.2.5).
+
+        Hypothesis: All consumption methods work on same stream.
+        Evidence: Text from get_text matches deltas from get_text_stream.
+        """
+        # Get text via get_text()
+        text1 = await wrapper_with_mock_stream.get_text()
+
+        # Get text via streaming
+        deltas: list[str] = []
+        async for delta in wrapper_with_mock_stream.get_text_stream():
+            deltas.append(delta)
+        text2 = "".join(deltas)
+
+        # Evidence: Both methods return same text
+        assert text1 == text2
+        assert text1 == "Hello world!"
+
+    async def test_get_message_caches_result(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test get_message() caches result for reuse.
+
+        Hypothesis: Second call returns cached value without reprocessing.
+        Evidence: Property returns cached value after first call.
+        """
+        # First call
+        message1 = await wrapper_with_mock_stream.get_message()
+
+        # Evidence: Message is cached
+        assert wrapper_with_mock_stream.message is not None
+        assert wrapper_with_mock_stream.message is message1
+
+        # Second call should return cached value
+        message2 = await wrapper_with_mock_stream.get_message()
+
+        # Evidence: Same instance returned
+        assert message2 is message1
+
+    async def test_get_text_caches_result(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test get_text() caches result for reuse.
+
+        Hypothesis: Second call returns cached value without reprocessing.
+        Evidence: Property returns cached value after first call.
+        """
+        # First call
+        text1 = await wrapper_with_mock_stream.get_text()
+
+        # Evidence: Text is cached
+        assert wrapper_with_mock_stream.text is not None
+        assert wrapper_with_mock_stream.text == text1
+
+        # Second call should return cached value
+        text2 = await wrapper_with_mock_stream.get_text()
+
+        # Evidence: Same value returned
+        assert text2 == text1
+
+    async def test_concurrent_get_message_calls(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test concurrent get_message() calls are deduplicated.
+
+        Hypothesis: Concurrent calls share same task, avoiding duplicate work.
+        Evidence: All callers get same result.
+        """
+        # Launch multiple concurrent calls
+        results = await asyncio.gather(
+            wrapper_with_mock_stream.get_message(),
+            wrapper_with_mock_stream.get_message(),
+            wrapper_with_mock_stream.get_message(),
+        )
+
+        # Evidence: All got same result
+        assert results[0] is results[1]
+        assert results[1] is results[2]
+        assert results[0]["content"] == "Hello world!" or any(
+            isinstance(p, dict) and p.get("text") == "Hello world!"
+            for p in results[0].get("content", [])
+            if isinstance(results[0].get("content"), list)
+        )
+
+    async def test_concurrent_get_text_calls(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test concurrent get_text() calls are deduplicated.
+
+        Hypothesis: Concurrent calls share same task.
+        Evidence: All callers get same result.
+        """
+        # Launch multiple concurrent calls
+        results = await asyncio.gather(
+            wrapper_with_mock_stream.get_text(),
+            wrapper_with_mock_stream.get_text(),
+            wrapper_with_mock_stream.get_text(),
+        )
+
+        # Evidence: All got same result
+        assert results[0] == results[1]
+        assert results[1] == results[2]
+        assert results[0] == "Hello world!"
+
+    async def test_concurrent_stream_consumption(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test multiple consumers can stream concurrently.
+
+        Hypothesis: ReusableStream supports multiple concurrent iterators.
+        Evidence: Multiple consumers get same events.
+        """
+
+        async def consume_text_stream() -> str:
+            """Consume text stream and return joined text."""
+            deltas: list[str] = []
+            async for delta in wrapper_with_mock_stream.get_text_stream():
+                deltas.append(delta)
+            return "".join(deltas)
+
+        async def consume_full_stream() -> int:
+            """Consume full stream and return event count."""
+            count = 0
+            async for _ in wrapper_with_mock_stream.get_full_stream():
+                count += 1
+            return count
+
+        # Run consumers concurrently
+        text_result, count_result = await asyncio.gather(
+            consume_text_stream(),
+            consume_full_stream(),
+        )
+
+        # Evidence: Text consumer got expected text
+        assert text_result == "Hello world!"
+
+        # Evidence: Full stream consumer got all events
+        assert count_result == 5  # Number of mock events
+
+    async def test_mixed_consumption_patterns(
+        self, wrapper_with_mock_stream: ResponseWrapper
+    ):
+        """Test mixing different consumption patterns.
+
+        Hypothesis: Can use get_message(), get_text(), and streams together.
+        Evidence: All return consistent data.
+        """
+        # Start with streaming
+        deltas: list[str] = []
+        async for delta in wrapper_with_mock_stream.get_text_stream():
+            deltas.append(delta)
+
+        # Then get message
+        message = await wrapper_with_mock_stream.get_message()
+
+        # Then get text
+        text = await wrapper_with_mock_stream.get_text()
+
+        # Evidence: All consistent
+        streamed_text = "".join(deltas)
+        assert streamed_text == "Hello world!"
+        assert text == "Hello world!"
+        assert message["role"] == "assistant"
+
+
 if __name__ == "__main__":
     # Run tests with pytest
     _ = pytest.main([__file__, "-v"])

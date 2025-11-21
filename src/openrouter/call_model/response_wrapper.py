@@ -35,7 +35,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
 from openrouter.call_model.reusable_stream import ReusableStream
@@ -273,13 +273,18 @@ class ResponseWrapper:
         # Execute tools if needed (includes stream init)
         await self._execute_tools_if_needed()
 
-        # TODO: Aggregate stream events into message
-        # This will use stream_transformers.build_message in PR 3.2
-        # For now, return placeholder
-        message: dict[str, object] = {
-            "role": "assistant",
-            "content": [],
-        }
+        # Get the stream
+        if self._stream is None:
+            raise RuntimeError("Stream not initialized")
+
+        # Import transformer function
+        from openrouter.call_model.stream_transformers import build_message_from_stream
+
+        # Create a new iterator from the reusable stream
+        stream_iterator = self._stream.create_iterator()
+
+        # Aggregate stream events into message
+        message = await build_message_from_stream(stream_iterator)
 
         return message
 
@@ -299,12 +304,30 @@ class ResponseWrapper:
         # Get complete message
         message = await self.get_message()
 
-        # TODO: Extract text from message
-        # This will use proper content extraction in PR 3.2
-        # For now, return placeholder
-        text = ""
+        # Extract text from message content
+        content = message.get("content")
 
-        return text
+        # Handle different content formats
+        if isinstance(content, str):
+            # Simple string content
+            return content
+        elif isinstance(content, list):
+            # List of content parts - extract text from all text parts
+            text_parts: list[str] = []
+            for part in content:
+                if isinstance(part, dict):
+                    # Check for text type content
+                    if part.get("type") == "text" or part.get("type") == "output_text":
+                        text_value = part.get("text")
+                        if isinstance(text_value, str):
+                            text_parts.append(text_value)
+                elif isinstance(part, str):
+                    # Direct string in list
+                    text_parts.append(part)
+            return "".join(text_parts)
+        else:
+            # Unknown format, return empty string
+            return ""
 
     async def get_message(self) -> dict[str, object]:
         """Get complete message with tool execution.
@@ -367,6 +390,67 @@ class ResponseWrapper:
         text = await self._text_task
         self._cached_data["text"] = text
         return text
+
+    async def get_text_stream(self) -> AsyncIterator[str]:
+        """Stream text deltas as they arrive.
+
+        This method yields text content as it arrives from the API, allowing
+        real-time display of the response. Multiple consumers can iterate
+        concurrently thanks to the ReusableStream.
+
+        Yields:
+            str: Text delta strings as they arrive
+
+        Raises:
+            Exception: Any error during stream initialization
+
+        Example:
+            >>> async for delta in wrapper.get_text_stream():
+            ...     print(delta, end="", flush=True)
+        """
+        # Initialize stream if needed
+        await self._init_stream()
+
+        if self._stream is None:
+            raise RuntimeError("Stream not initialized")
+
+        # Import transformer function
+        from openrouter.call_model.stream_transformers import extract_text_deltas
+
+        # Create iterator and yield text deltas
+        stream_iterator = self._stream.create_iterator()
+        async for delta in extract_text_deltas(stream_iterator):
+            yield delta
+
+    async def get_full_stream(self) -> AsyncIterator[dict[str, object]]:
+        """Stream all SSE events from the response.
+
+        This method provides access to the raw event stream, yielding all
+        events as they arrive. Useful for custom event processing or debugging.
+        Multiple consumers can iterate concurrently.
+
+        Yields:
+            dict[str, object]: Raw SSE events from the API
+
+        Raises:
+            Exception: Any error during stream initialization
+
+        Example:
+            >>> async for event in wrapper.get_full_stream():
+            ...     print(f"Event type: {event.get('type')}")
+            ...     if event.get('type') == 'response.output_text.delta':
+            ...         print(f"Delta: {event.get('delta')}")
+        """
+        # Initialize stream if needed
+        await self._init_stream()
+
+        if self._stream is None:
+            raise RuntimeError("Stream not initialized")
+
+        # Create iterator and yield all events
+        stream_iterator = self._stream.create_iterator()
+        async for event in stream_iterator:
+            yield event
 
     async def close(self) -> None:
         """Close the wrapper and clean up resources.
