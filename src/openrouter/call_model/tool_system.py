@@ -147,8 +147,8 @@ class BaseTool(BaseModel, Generic[T, R]):
     def to_json_schema(self) -> dict[str, Any]:
         """Generate JSON schema for tool parameters.
 
-        Extracts the parameter model type from the generic and generates
-        its JSON schema for use in API requests.
+        Extracts the parameter model type from the execute method signature
+        and generates its JSON schema for use in API requests.
 
         Returns:
             dict[str, Any]: JSON schema for the tool's parameters
@@ -158,19 +158,25 @@ class BaseTool(BaseModel, Generic[T, R]):
             >>> assert "properties" in schema
             >>> assert "location" in schema["properties"]
         """
-        # Get the parameter model type from the generic base
-        # We need to look at __orig_bases__ to get the actual Generic[T, R] info
-        if hasattr(self, "__orig_bases__"):
-            for base in self.__orig_bases__:  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
-                origin = get_origin(base)
-                if origin is not None and issubclass(origin, BaseTool):
-                    args = get_args(base)
-                    if args and len(args) >= 1:
-                        param_model = args[0]
-                        if isinstance(param_model, type) and issubclass(
-                            param_model, BaseModel
-                        ):
-                            return param_model.model_json_schema()
+        # Get the parameter type from the execute method signature
+        # This is more reliable than trying to extract from __orig_bases__
+        # which gets complicated with Pydantic's metaclass
+        if hasattr(self, "execute"):
+            execute_method = self.execute
+            # Get the signature
+            sig = inspect.signature(execute_method)
+            # For bound methods, 'self' is already excluded from signature
+            # First parameter is 'params', second is 'context'
+            params_list = list(sig.parameters.values())
+            if len(params_list) >= 1:
+                params_param = params_list[0]  # First param is 'params'
+                if params_param.annotation != inspect.Parameter.empty:
+                    param_type = params_param.annotation
+                    # Check if it's a BaseModel subclass
+                    if isinstance(param_type, type) and issubclass(
+                        param_type, BaseModel
+                    ):
+                        return param_type.model_json_schema()
 
         # Fallback: return empty schema
         return {}
