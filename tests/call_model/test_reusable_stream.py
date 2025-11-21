@@ -10,7 +10,6 @@ This module tests the ReusableStream class, verifying:
 """
 
 import asyncio
-import sys
 from typing import Any, AsyncIterator, Dict, List
 
 import pytest

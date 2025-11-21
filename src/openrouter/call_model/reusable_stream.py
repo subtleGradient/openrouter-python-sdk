@@ -47,8 +47,9 @@ class ReusableStream:
 
     The cache is bounded to prevent memory issues:
     - Maximum 10,000 events (approximately 10MB assuming ~1KB per event)
-    - The bound is enforced per the TypeScript reference: buffer grows as
-      needed for active consumers, but is bounded overall
+    - Events are only removed once all active consumers have read them
+    - If a consumer lags behind, the cache may temporarily exceed the limit
+      to ensure no consumer misses events
 
     Thread safety is ensured through asyncio locks, making this safe for
     concurrent access from multiple async tasks.
@@ -99,6 +100,25 @@ class ReusableStream:
             async for event in self._source:
                 async with self._lock:
                     self._buffer.append(event)
+
+                    # Enforce MAX_CACHE_SIZE by removing oldest events
+                    # Only trim if all consumers have read past the oldest events
+                    if len(self._buffer) > self.MAX_CACHE_SIZE:
+                        # Find the minimum consumer position
+                        min_position = (
+                            min(self._consumer_positions.values())
+                            if self._consumer_positions
+                            else 0
+                        )
+                        # We can only safely remove events that all consumers have already read
+                        while (
+                            len(self._buffer) > self.MAX_CACHE_SIZE and min_position > 0
+                        ):
+                            self._buffer.pop(0)
+                            # Adjust all consumer positions since we removed an element
+                            for consumer_id in self._consumer_positions:
+                                self._consumer_positions[consumer_id] -= 1
+                            min_position -= 1
 
                     # Notify all waiting consumers
                     for event_obj in self._consumer_events.values():
