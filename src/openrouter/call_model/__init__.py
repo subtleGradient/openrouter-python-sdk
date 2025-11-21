@@ -42,6 +42,7 @@ from .exceptions import (
     ToolExecutionError,
     ToolValidationError,
 )
+from .reusable_stream import ReusableStream
 from .types import (
     CachedData,
     EventType,
@@ -59,6 +60,8 @@ __all__ = [
     "StreamInterruptedError",
     "ToolExecutionError",
     "ToolValidationError",
+    # Core classes
+    "ReusableStream",
     # Type definitions
     "CachedData",
     "EventType",
