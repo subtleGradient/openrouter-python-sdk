@@ -6,7 +6,7 @@ with comprehensive docstrings.
 """
 
 from enum import Enum
-from typing import TypedDict
+from typing import Optional, TypedDict
 
 
 # Type aliases for clarity and maintainability
@@ -58,10 +58,10 @@ class ToolContext(TypedDict, total=False):
 
     number_of_turns: int
     message_history: list[dict[str, object]]
-    model: str | None
-    models: list[str] | None
-    previous_tool_results: list[dict[str, object]] | None
-    request_id: str | None
+    model: Optional[str]
+    models: Optional[list[str]]
+    previous_tool_results: Optional[list[dict[str, object]]]
+    request_id: Optional[str]
 
 
 class ResponseState(str, Enum):
@@ -103,7 +103,7 @@ class CachedData(TypedDict, total=False):
         ... }
     """
 
-    message: dict[str, object] | None
-    text: str | None
-    tool_calls: list[dict[str, object]] | None
-    raw_response: dict[str, object] | None
+    message: Optional[dict[str, object]]
+    text: Optional[str]
+    tool_calls: Optional[list[dict[str, object]]]
+    raw_response: Optional[dict[str, object]]

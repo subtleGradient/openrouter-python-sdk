@@ -4,7 +4,13 @@ This module defines the exception hierarchy for call_model operations,
 providing actionable error messages with context for debugging.
 """
 
-from typing import override
+from typing import Optional
+
+try:
+    from typing import override  # type: ignore[attr-defined]
+except ImportError:
+    # Python < 3.12 compatibility
+    from typing_extensions import override  # type: ignore[import-not-found]
 
 
 class CallModelError(Exception):
@@ -20,14 +26,14 @@ class CallModelError(Exception):
     """
 
     message: str
-    code: str | None
+    code: Optional[str]
     context: dict[str, object]
 
     def __init__(
         self,
         message: str,
-        code: str | None = None,
-        context: dict[str, object] | None = None,
+        code: Optional[str] = None,
+        context: Optional[dict[str, object]] = None,
     ):
         """Initialize the error with message, code, and context.
 
@@ -131,9 +137,9 @@ class StreamInterruptedError(CallModelError):
         ... )
     """
 
-    last_event: dict[str, object] | None
+    last_event: Optional[dict[str, object]]
 
-    def __init__(self, last_event: dict[str, object] | None = None):
+    def __init__(self, last_event: Optional[dict[str, object]] = None):
         """Initialize the stream interrupted error.
 
         Args:

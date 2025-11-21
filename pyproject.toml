@@ -9,6 +9,7 @@ dependencies = [
     "httpcore >=1.0.9",
     "httpx >=0.28.1",
     "pydantic >=2.11.2",
+    "typing-extensions >=4.0.0",
 ]
 urls.repository = "https://github.com/OpenRouterTeam/python-sdk.git"
 license = { text = "Apache-2.0" }
