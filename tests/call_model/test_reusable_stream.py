@@ -9,18 +9,28 @@ This module tests the ReusableStream class, verifying:
 - Thread safety under concurrent access
 """
 
+from __future__ import annotations
+
 import asyncio
+<<<<<<< HEAD
 from typing import Any, AsyncIterator, Dict, List
+=======
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Any
+>>>>>>> 529a21a (fix: update type annotations to Python 3.9+ syntax and fix basedpyright warnings)
 
 import pytest
+
+if TYPE_CHECKING:
+    pass
 
 from openrouter.call_model.reusable_stream import ReusableStream
 
 
 # Test helper: Create async iterator from list
 async def async_iter_from_list(
-    items: List[Dict[str, Any]],
-) -> AsyncIterator[Dict[str, Any]]:
+    items: list[dict[str, Any]],
+) -> AsyncIterator[dict[str, Any]]:
     """Create an async iterator from a list of items.
 
     Args:
@@ -35,8 +45,8 @@ async def async_iter_from_list(
 
 # Test helper: Create async iterator that raises error
 async def async_iter_with_error(
-    items: List[Dict[str, Any]], error_after: int
-) -> AsyncIterator[Dict[str, Any]]:
+    items: list[dict[str, Any]], error_after: int
+) -> AsyncIterator[dict[str, Any]]:
     """Create an async iterator that raises an error after N items.
 
     Args:
@@ -57,8 +67,8 @@ async def async_iter_with_error(
 
 # Test helper: Consume iterator fully into list
 async def consume_to_list(
-    iterator: AsyncIterator[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    iterator: AsyncIterator[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Consume an async iterator fully into a list.
 
     Args:
@@ -122,7 +132,7 @@ class TestReusableStreamBasics:
         events = [{"id": i, "data": f"event_{i}"} for i in range(50)]
 
         # Create a slow source that yields with delays
-        async def slow_source() -> AsyncIterator[Dict[str, Any]]:
+        async def slow_source() -> AsyncIterator[dict[str, Any]]:
             for event in events:
                 yield event
                 await asyncio.sleep(0.001)  # Small delay between events
@@ -308,11 +318,11 @@ class TestReusableStreamConcurrency:
         stream = ReusableStream(source)
 
         # Fast consumer (no delays)
-        async def fast_consumer() -> List[Dict[str, Any]]:
+        async def fast_consumer() -> list[dict[str, Any]]:
             return await consume_to_list(stream.create_iterator())
 
         # Slow consumer (small delays)
-        async def slow_consumer() -> List[Dict[str, Any]]:
+        async def slow_consumer() -> list[dict[str, Any]]:
             result = []
             async for event in stream.create_iterator():
                 result.append(event)
@@ -333,7 +343,7 @@ class TestReusableStreamConcurrency:
 
         stream = ReusableStream(source)
 
-        async def rapid_consumer(delay: float) -> List[Dict[str, Any]]:
+        async def rapid_consumer(delay: float) -> list[dict[str, Any]]:
             await asyncio.sleep(delay)
             return await consume_to_list(stream.create_iterator())
 
@@ -369,7 +379,7 @@ class TestReusableStreamCleanup:
         """Test manual close() method."""
         # Hypothesis: close() stops pump and cleans up
 
-        async def infinite_source() -> AsyncIterator[Dict[str, Any]]:
+        async def infinite_source() -> AsyncIterator[dict[str, Any]]:
             i = 0
             while True:
                 yield {"id": i}
@@ -398,7 +408,7 @@ class TestReusableStreamCleanup:
         await stream.close()
 
         # Cancel the consumer task since stream is closed
-        consumer_task.cancel()
+        _ = consumer_task.cancel()
         try:
             await consumer_task
         except asyncio.CancelledError:
@@ -418,7 +428,7 @@ class TestReusableStreamCleanup:
 
         # Partially consume and break
         count = 0
-        async for event in stream.create_iterator():
+        async for _ in stream.create_iterator():
             count += 1
             if count >= 10:
                 break
@@ -491,7 +501,7 @@ class TestReusableStreamEdgeCases:
         stream = ReusableStream(source)
 
         # Consumer that raises exception mid-stream
-        async def failing_consumer() -> List[Dict[str, Any]]:
+        async def failing_consumer() -> list[dict[str, Any]]:
             result = []
             async for event in stream.create_iterator():
                 if len(result) >= 10:
@@ -500,7 +510,7 @@ class TestReusableStreamEdgeCases:
             return result
 
         # Normal consumer
-        async def normal_consumer() -> List[Dict[str, Any]]:
+        async def normal_consumer() -> list[dict[str, Any]]:
             return await consume_to_list(stream.create_iterator())
 
         # Run both
@@ -514,4 +524,4 @@ class TestReusableStreamEdgeCases:
 
 if __name__ == "__main__":
     # Run tests with pytest
-    pytest.main([__file__, "-v"])
+    _ = pytest.main([__file__, "-v"])
