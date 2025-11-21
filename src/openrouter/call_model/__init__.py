@@ -43,6 +43,16 @@ from .exceptions import (
     ToolValidationError,
 )
 from .reusable_stream import ReusableStream
+from .tool_executor import execute_tool, find_tool_by_name
+from .tool_system import (
+    BaseTool,
+    GeneratorTool,
+    ManualTool,
+    ParsedToolCall,
+    RegularTool,
+    ToolExecutionResult,
+    tool,
+)
 from .types import (
     CachedData,
     EventType,
@@ -62,6 +72,16 @@ __all__ = [
     "ToolValidationError",
     # Core classes
     "ReusableStream",
+    # Tool system
+    "BaseTool",
+    "GeneratorTool",
+    "ManualTool",
+    "ParsedToolCall",
+    "RegularTool",
+    "ToolExecutionResult",
+    "execute_tool",
+    "find_tool_by_name",
+    "tool",
     # Type definitions
     "CachedData",
     "EventType",
